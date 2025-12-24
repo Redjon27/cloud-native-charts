@@ -30,3 +30,5 @@ mongo:
     username: "root"
     password: "rootpass"
   database: "visitsdb_dev"
+
+# Add any additional configuration values as needed
