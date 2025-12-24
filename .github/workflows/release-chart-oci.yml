@@ -8,7 +8,7 @@ on:
 
 env:
   JFROG_HOST: trial29e6cp.jfrog.io
-  OCI_HELM_REPO: helm-trial   # <-- ndryshoje në emrin real të Helm OCI repo në JFrog
+  OCI_HELM_REPO: docker-trial
   CHART_PATH: charts/devops-tech-challenge
 
 jobs:
