@@ -1,0 +1,46 @@
+name: Release Helm Chart (OCI -> JFrog)
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - "charts/devops-tech-challenge/**"
+
+env:
+  JFROG_HOST: trial29e6cp.jfrog.io
+  OCI_HELM_REPO: helm-trial   # <-- ndryshoje në emrin real të Helm OCI repo në JFrog
+  CHART_PATH: charts/devops-tech-challenge
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read chart name/version
+        id: meta
+        shell: bash
+        run: |
+          NAME="$(yq -r '.name' ${CHART_PATH}/Chart.yaml)"
+          VERSION="$(yq -r '.version' ${CHART_PATH}/Chart.yaml)"
+          echo "name=$NAME" >> $GITHUB_OUTPUT
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Helm lint
+        run: helm lint "${CHART_PATH}"
+
+      - name: Login to JFrog OCI (Helm registry)
+        run: |
+          echo "${{ secrets.JFROG_TOKEN }}" | helm registry login "${JFROG_HOST}" \
+            --username "${{ secrets.JFROG_USERNAME }}" \
+            --password-stdin
+
+      - name: Package chart
+        run: helm package "${CHART_PATH}" --destination dist
+
+      - name: Push chart to JFrog OCI
+        run: |
+          set -euo pipefail
+          PKG="dist/${{ steps.meta.outputs.name }}-${{ steps.meta.outputs.version }}.tgz"
+          echo "Pushing $PKG"
+          helm push "$PKG" "oci://${JFROG_HOST}/${OCI_HELM_REPO}"

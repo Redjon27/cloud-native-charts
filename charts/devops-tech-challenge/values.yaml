@@ -1,0 +1,32 @@
+app:
+  replicaCount: 1
+  image:
+    repository: ""   # set from GitOps repo
+    tag: ""          # set from GitOps repo
+    pullPolicy: IfNotPresent
+  imagePullSecrets:
+    - jfrog-regcred
+  containerPort: 3000
+  env: {}            # set from GitOps repo
+
+service:
+  name: service-devops-tech-challenge
+  type: ClusterIP
+  port: 80
+  targetPort: 3000
+
+ingress:
+  enabled: false
+  className: nginx
+  host: ""
+  path: /
+  pathType: Prefix
+
+mongo:
+  enabled: true
+  image: "mongo:7"
+  port: 27017
+  auth:
+    username: "root"
+    password: "rootpass"
+  database: "visitsdb_dev"
