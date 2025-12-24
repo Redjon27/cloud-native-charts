@@ -12,7 +12,7 @@ env:
   CHART_PATH: charts/devops-tech-challenge
 
 jobs:
-  release:
+  release-helm-chart-oci:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
