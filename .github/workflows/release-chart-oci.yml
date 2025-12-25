@@ -6,6 +6,9 @@ on:
     paths:
       - "charts/devops-tech-challenge/**"
 
+permissions:
+  contents: write
+
 env:
   JFROG_HOST: trial29e6cp.jfrog.io
   OCI_HELM_REPO: docker-trial
@@ -16,31 +19,78 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-      - name: Read chart name/version
-        id: meta
+      - name: Install yq
         shell: bash
         run: |
-          NAME="$(yq -r '.name' ${CHART_PATH}/Chart.yaml)"
-          VERSION="$(yq -r '.version' ${CHART_PATH}/Chart.yaml)"
-          echo "name=$NAME" >> $GITHUB_OUTPUT
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          sudo apt-get update
+          sudo apt-get install -y yq
 
-      - name: Helm lint
-        run: helm lint "${CHART_PATH}"
-
-      - name: Login to JFrog OCI (Helm registry)
+      # 1) Auto-bump version (patch) to avoid overwriting OCI tag
+      - name: Auto-bump chart version (patch)
+        id: bump
+        shell: bash
         run: |
-          echo "${{ secrets.JFROG_TOKEN }}" | helm registry login "${JFROG_HOST}" \
+          set -euo pipefail
+
+          CHART="${CHART_PATH}/Chart.yaml"
+
+          NAME="$(yq -r '.name' "$CHART")"
+          CUR_VERSION="$(yq -r '.version' "$CHART")"
+
+          echo "Current chart: $NAME $CUR_VERSION"
+
+          # patch bump: X.Y.Z -> X.Y.(Z+1)
+          IFS='.' read -r MAJOR MINOR PATCH <<< "$CUR_VERSION"
+          PATCH=$((PATCH+1))
+          NEXT_VERSION="${MAJOR}.${MINOR}.${PATCH}"
+
+          # bump version
+          yq -i ".version = \"${NEXT_VERSION}\"" "$CHART"
+
+          # optional: set appVersion to current commit short sha
+          SHORT_SHA="${GITHUB_SHA:0:8}"
+          yq -i ".appVersion = \"${SHORT_SHA}\"" "$CHART" || true
+
+          git diff -- "$CHART"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git add "$CHART"
+          git commit -m "chore(chart): bump ${NAME} to ${NEXT_VERSION}" || true
+          git push origin HEAD:main
+
+          echo "name=$NAME" >> $GITHUB_OUTPUT
+          echo "version=$NEXT_VERSION" >> $GITHUB_OUTPUT
+
+      # 2) Helm lint
+      - name: Helm lint
+        run: helm lint "${{ env.CHART_PATH }}"
+
+      # 3) Login to JFrog OCI
+      - name: Login to JFrog OCI (Helm registry)
+        shell: bash
+        run: |
+          echo "${{ secrets.JFROG_TOKEN }}" | helm registry login "${{ env.JFROG_HOST }}" \
             --username "${{ secrets.JFROG_USERNAME }}" \
             --password-stdin
 
+      # 4) Package chart (using bumped version)
       - name: Package chart
-        run: helm package "${CHART_PATH}" --destination dist
-
-      - name: Push chart to JFrog OCI
+        shell: bash
         run: |
           set -euo pipefail
-          PKG="dist/${{ steps.meta.outputs.name }}-${{ steps.meta.outputs.version }}.tgz"
+          helm package "${{ env.CHART_PATH }}" --destination dist
+          ls -la dist
+
+      # 5) Push chart to JFrog OCI
+      - name: Push chart to JFrog OCI
+        shell: bash
+        run: |
+          set -euo pipefail
+          PKG="dist/${{ steps.bump.outputs.name }}-${{ steps.bump.outputs.version }}.tgz"
           echo "Pushing $PKG"
-          helm push "$PKG" "oci://${JFROG_HOST}/${OCI_HELM_REPO}"
+          helm push "$PKG" "oci://${{ env.JFROG_HOST }}/${{ env.OCI_HELM_REPO }}"
