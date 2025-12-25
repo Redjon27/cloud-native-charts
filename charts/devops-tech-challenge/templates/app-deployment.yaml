@@ -27,13 +27,31 @@ spec:
           imagePullPolicy: {{ .Values.app.image.pullPolicy }}
           ports:
             - containerPort: {{ .Values.app.containerPort }}
+
+          {{- $cm := .Values.app.configMap | default dict }}
+          {{- $cmdata := $cm.data | default dict }}
+          {{- $s := .Values.app.secret | default dict }}
+          {{- $sdata := $s.stringData | default dict }}
+
+          {{- if or (and $cm.enabled (gt (len $cmdata) 0)) (and $s.enabled (gt (len $sdata) 0)) }}
+          envFrom:
+            {{- if and $cm.enabled (gt (len $cmdata) 0) }}
+            - configMapRef:
+                name: {{ include "dtc.fullname" . }}-config
+            {{- end }}
+            {{- if and $s.enabled (gt (len $sdata) 0) }}
+            - secretRef:
+                name: {{ include "dtc.fullname" . }}-secret
+            {{- end }}
+          {{- end }}
+
+          {{- if .Values.app.env }}
           env:
-            - name: NODE_ENV
-              value: {{ .Values.app.env.NODE_ENV | quote }}
-            - name: MONGO_DB
-              value: {{ .Values.app.env.MONGO_DB | quote }}
-            - name: MONGODB_URI
-              value: {{ .Values.app.env.MONGODB_URI | quote }}
+            {{- range $key, $value := .Values.app.env }}
+            - name: {{ $key }}
+              value: {{ $value | quote }}
+            {{- end }}
+          {{- end }}
 
           startupProbe:
             httpGet:

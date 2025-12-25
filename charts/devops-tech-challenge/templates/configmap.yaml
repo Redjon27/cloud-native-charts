@@ -1,0 +1,14 @@
+{{- $cm := .Values.app.configMap | default dict }}
+{{- $data := $cm.data | default dict }}
+{{- if and ($cm.enabled) (gt (len $data) 0) }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "dtc.fullname" . }}-config
+  labels:
+    {{- include "dtc.labels" . | nindent 4 }}
+data:
+{{- range $k, $v := $data }}
+  {{ $k }}: {{ $v | quote }}
+{{- end }}
+{{- end }}

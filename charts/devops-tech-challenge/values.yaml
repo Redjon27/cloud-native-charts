@@ -1,13 +1,26 @@
 app:
   replicaCount: 1
+
   image:
     repository: ""   # set from GitOps repo
     tag: ""          # set from GitOps repo
     pullPolicy: IfNotPresent
+
   imagePullSecrets:
     - jfrog-regcred
+
   containerPort: 3000
-  env: {}            # set from GitOps repo
+
+  # optional env overrides (extra vars), set from GitOps repo
+  env: {}
+
+  configMap:
+    enabled: true
+    data: {}
+
+  secret:
+    enabled: true
+    stringData: {}
 
 service:
   name: service-devops-tech-challenge
@@ -30,5 +43,3 @@ mongo:
     username: "root"
     password: "rootpass"
   database: "visitsdb_dev"
-
-# Add any additional configuration values as needed
