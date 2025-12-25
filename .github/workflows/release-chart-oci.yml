@@ -16,17 +16,28 @@ env:
 
 jobs:
   release-helm-chart-oci:
+    # stop workflow loop from the bump commit
+    if: ${{ !contains(github.event.head_commit.message, '[skip ci]') }}
+
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Install yq
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: v3.14.4
+
+      - name: Install yq (mikefarah)
         shell: bash
         run: |
-          sudo apt-get update
-          sudo apt-get install -y yq
+          set -euo pipefail
+          YQ_VERSION="v4.44.3"
+          sudo wget -qO /usr/local/bin/yq "https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/yq_linux_amd64"
+          sudo chmod +x /usr/local/bin/yq
+          yq --version
 
       # 1) Auto-bump version (patch) to avoid overwriting OCI tag
       - name: Auto-bump chart version (patch)
@@ -37,8 +48,8 @@ jobs:
 
           CHART="${CHART_PATH}/Chart.yaml"
 
-          NAME="$(yq -r '.name' "$CHART")"
-          CUR_VERSION="$(yq -r '.version' "$CHART")"
+          NAME="$(yq e -r '.name' "$CHART")"
+          CUR_VERSION="$(yq e -r '.version' "$CHART")"
 
           echo "Current chart: $NAME $CUR_VERSION"
 
@@ -48,32 +59,38 @@ jobs:
           NEXT_VERSION="${MAJOR}.${MINOR}.${PATCH}"
 
           # bump version
-          yq -i ".version = \"${NEXT_VERSION}\"" "$CHART"
+          yq e -i ".version = \"${NEXT_VERSION}\"" "$CHART"
 
           # optional: set appVersion to current commit short sha
           SHORT_SHA="${GITHUB_SHA:0:8}"
-          yq -i ".appVersion = \"${SHORT_SHA}\"" "$CHART" || true
+          yq e -i ".appVersion = \"${SHORT_SHA}\"" "$CHART" || true
 
-          git diff -- "$CHART"
+          git diff -- "$CHART" || true
 
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
           git add "$CHART"
-          git commit -m "chore(chart): bump ${NAME} to ${NEXT_VERSION}" || true
+
+          # commit might be empty if version already updated somehow
+          git commit -m "chore(chart): bump ${NAME} to ${NEXT_VERSION} [skip ci]" || true
           git push origin HEAD:main
 
-          echo "name=$NAME" >> $GITHUB_OUTPUT
-          echo "version=$NEXT_VERSION" >> $GITHUB_OUTPUT
+          echo "name=$NAME" >> "$GITHUB_OUTPUT"
+          echo "version=$NEXT_VERSION" >> "$GITHUB_OUTPUT"
 
       # 2) Helm lint
       - name: Helm lint
-        run: helm lint "${{ env.CHART_PATH }}"
+        shell: bash
+        run: |
+          set -euo pipefail
+          helm lint "${{ env.CHART_PATH }}"
 
       # 3) Login to JFrog OCI
       - name: Login to JFrog OCI (Helm registry)
         shell: bash
         run: |
+          set -euo pipefail
           echo "${{ secrets.JFROG_TOKEN }}" | helm registry login "${{ env.JFROG_HOST }}" \
             --username "${{ secrets.JFROG_USERNAME }}" \
             --password-stdin
@@ -83,6 +100,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          mkdir -p dist
           helm package "${{ env.CHART_PATH }}" --destination dist
           ls -la dist
 
